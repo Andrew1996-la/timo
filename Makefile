@@ -2,7 +2,7 @@ include .env
 export
 
 service-run:
-	go run ./cmd
+	go run ./cmd/timo
 
 migrate-up:
 	migrate -path migration -database ${CONN_STRING} up
