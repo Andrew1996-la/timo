@@ -23,7 +23,7 @@ func main() {
 
 	p := tea.NewProgram(app.New(ctx, taskService))
 
-	if err := p.Start(); err != nil {
+	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
