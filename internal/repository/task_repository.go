@@ -53,3 +53,53 @@ func (t *TaskRepository) Delete(ctx context.Context, id int) error {
 
 	return nil
 }
+
+func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
+	query := `
+		SELECT id, title, created_at, deleted_at
+		FROM tasks
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC
+	`
+
+	rows, err := t.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []models.Task
+
+	for rows.Next() {
+		var task models.Task
+
+		err = rows.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt)
+
+		if err != nil {
+			return nil, err
+		}
+
+		tasks = append(tasks, task)
+	}
+
+	return tasks, nil
+}
+
+func (t *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, error) {
+	query := `
+		SELECT id, title, created_at, deleted_at
+		FROM tasks
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+
+	row := t.db.QueryRow(ctx, query, id)
+
+	var task models.Task
+
+	err := row.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &task, nil
+}

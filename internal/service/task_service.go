@@ -31,3 +31,15 @@ func (t TaskService) Delete(ctx context.Context, id int) error {
 
 	return t.repo.Delete(ctx, id)
 }
+
+func (t TaskService) GetAll(ctx context.Context) ([]models.Task, error) {
+	return t.repo.GetAll(ctx)
+}
+
+func (t TaskService) GetById(ctx context.Context, id int) (*models.Task, error) {
+	if id <= 0 {
+		return nil, errors.New("task by id not found")
+	}
+
+	return t.repo.GetByID(ctx, id)
+}
