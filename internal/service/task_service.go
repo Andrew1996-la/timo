@@ -23,3 +23,11 @@ func (t TaskService) Create(ctx context.Context, title string) (*models.Task, er
 
 	return t.repo.Create(ctx, title)
 }
+
+func (t TaskService) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return errors.New("task by id not found")
+	}
+
+	return t.repo.Delete(ctx, id)
+}

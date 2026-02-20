@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Andrew1996-la/timo/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,4 +33,23 @@ func (t *TaskRepository) Create(ctx context.Context, title string) (*models.Task
 	}
 
 	return &task, nil
+}
+
+func (t *TaskRepository) Delete(ctx context.Context, id int) error {
+	query := `
+		UPDATE tasks
+		SET deleted_at = NOW()
+		where id = $1 and deleted_at IS NULL
+   `
+
+	cmd, err := t.db.Exec(ctx, query, id)
+	if err != nil {
+		return err
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return errors.New("task not found or already deleted")
+	}
+
+	return nil
 }
