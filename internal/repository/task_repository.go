@@ -56,7 +56,7 @@ func (t *TaskRepository) Delete(ctx context.Context, id int) error {
 
 func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 	query := `
-		SELECT id, title, created_at, deleted_at
+		SELECT id, title, created_at, deleted_at, spent_seconds
 		FROM tasks
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -73,7 +73,7 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 	for rows.Next() {
 		var task models.Task
 
-		err = rows.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt)
+		err = rows.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt, &task.SpentSeconds)
 
 		if err != nil {
 			return nil, err
@@ -87,7 +87,7 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 
 func (t *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, error) {
 	query := `
-		SELECT id, title, created_at, deleted_at
+		SELECT id, title, created_at, deleted_at, spent_seconds
 		FROM tasks
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -96,10 +96,24 @@ func (t *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, err
 
 	var task models.Task
 
-	err := row.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt)
+	err := row.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt, &task.SpentSeconds)
 	if err != nil {
 		return nil, err
 	}
 
 	return &task, nil
+}
+
+func (r *TaskRepository) AddTime(
+	ctx context.Context,
+	id int,
+	seconds int,
+) error {
+	query := `
+		UPDATE tasks
+		SET spent_seconds = spent_seconds + $1
+		WHERE id = $2 AND deleted_at IS NULL
+	`
+	_, err := r.db.Exec(ctx, query, seconds, id)
+	return err
 }

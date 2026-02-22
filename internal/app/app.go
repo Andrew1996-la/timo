@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Andrew1996-la/timo/internal/models"
 	"github.com/Andrew1996-la/timo/internal/service"
@@ -25,6 +26,10 @@ type Model struct {
 	selected int
 	mode     ViewMode
 
+	timerRunning bool
+	timerTaskID  int
+	timerStarted time.Time
+
 	input textinput.Model
 	err   error
 }
@@ -39,6 +44,12 @@ type taskCreatedMsg struct {
 }
 
 type taskDeletedMsg struct {
+	err error
+}
+
+type tickMsg time.Time
+
+type timeAddedMsg struct {
 	err error
 }
 
@@ -95,6 +106,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, loadTasks(m.ctx, m.service)
+
+	case tickMsg:
+		if m.timerRunning {
+			return m, tick()
+		}
+		return m, nil
+
+	case timeAddedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		return m, loadTasks(m.ctx, m.service)
 	}
 
 	// 2️⃣ ПОТОМ — режим создания
@@ -146,6 +170,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Focus()
 			return m, nil
 
+		case "enter":
+			if len(m.tasks) == 0 {
+				return m, nil
+			}
+
+			task := m.tasks[m.selected]
+
+			// ⏹ если таймер уже бежит — останавливаем
+			if m.timerRunning {
+				elapsed := int(time.Since(m.timerStarted).Seconds())
+
+				stopID := m.timerTaskID
+
+				m.timerRunning = false
+				m.timerTaskID = 0
+
+				// сохраняем время
+				cmd := addTime(m.ctx, m.service, stopID, elapsed)
+
+				// если нажали ENTER на ТУ ЖЕ задаче — просто стоп
+				if stopID == task.Id {
+					return m, cmd
+				}
+
+				// иначе — старт новой
+				m.timerRunning = true
+				m.timerTaskID = task.Id
+				m.timerStarted = time.Now()
+
+				return m, tea.Batch(cmd, tick())
+			}
+
+			// ▶️ старт, если таймер не бежит
+			m.timerRunning = true
+			m.timerTaskID = task.Id
+			m.timerStarted = time.Now()
+
+			return m, tick()
+
 		case "d":
 			if len(m.tasks) == 0 {
 				return m, nil
@@ -185,7 +248,22 @@ func (m Model) View() string {
 		if i == m.selected {
 			cursor = "> "
 		}
-		result += fmt.Sprintf("%s [ID: %d] %s\n", cursor, t.Id, t.Title)
+
+		seconds := t.SpentSeconds
+
+		// если таймер запущен на этой задаче — считаем live-время
+		if m.timerRunning && m.timerTaskID == t.Id {
+			seconds += int(time.Since(m.timerStarted).Seconds())
+		}
+
+		timeStr := formatSeconds(seconds)
+
+		result += fmt.Sprintf(
+			"%s %s   %s\n",
+			cursor,
+			t.Title,
+			timeStr,
+		)
 	}
 
 	result += "\n↑↓ select   n new   d delete   q quit"
@@ -214,4 +292,24 @@ func deleteTask(ctx context.Context, s *service.TaskService, id int) tea.Cmd {
 		err := s.Delete(ctx, id)
 		return taskDeletedMsg{err: err}
 	}
+}
+
+func tick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func addTime(ctx context.Context, s *service.TaskService, id int, seconds int) tea.Cmd {
+	return func() tea.Msg {
+		err := s.AddTime(ctx, id, seconds)
+		return timeAddedMsg{err: err}
+	}
+}
+
+func formatSeconds(sec int) string {
+	h := sec / 3600
+	m := (sec % 3600) / 60
+	s := sec % 60
+	return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 }
