@@ -249,24 +249,34 @@ func (m Model) View() string {
 			cursor = "> "
 		}
 
-		seconds := t.SpentSeconds
+		isRunning := m.timerRunning && m.timerTaskID == t.Id
 
-		// если таймер запущен на этой задаче — считаем live-время
-		if m.timerRunning && m.timerTaskID == t.Id {
+		statusIcon := "⏸"
+		if isRunning {
+			statusIcon = "▶"
+		}
+
+		seconds := t.SpentSeconds
+		if isRunning {
 			seconds += int(time.Since(m.timerStarted).Seconds())
 		}
 
-		timeStr := formatSeconds(seconds)
-
-		result += fmt.Sprintf(
-			"%s %s   %s\n",
+		line := fmt.Sprintf(
+			"%s %s %-20s %s",
 			cursor,
+			statusIcon,
 			t.Title,
-			timeStr,
+			formatSeconds(seconds),
 		)
+
+		if isRunning {
+			line += "  ⚙️"
+		}
+
+		result += line + "\n"
 	}
 
-	result += "\n↑↓ select   n new   d delete   q quit"
+	result += "\n↑↓ select   enter start/pause   n new   d delete   q quit"
 	return result
 }
 
