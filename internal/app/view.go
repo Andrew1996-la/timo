@@ -15,6 +15,21 @@ func (m Model) View() string {
 		return fmt.Sprintf("Create task:\n\n%s\n\nenter save • esc cancel", m.Input.View())
 	}
 
+	if m.Mode == ViewConfirmDelete {
+		taskTitle := ""
+		for _, t := range m.Tasks {
+			if t.Id == m.confirmDeleteTaskID {
+				taskTitle = t.Title
+				break
+			}
+		}
+
+		return fmt.Sprintf(
+			"Delete task:\n\n❗ %s\n\n[y] delete   [n] cancel",
+			taskTitle,
+		)
+	}
+
 	if len(m.Tasks) == 0 {
 		return "No tasks yet.\n\npress q to quit"
 	}

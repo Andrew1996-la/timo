@@ -26,6 +26,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCreateMode(msg)
 	}
 
+	// Режим подтверждения удаления задачи
+	if m.Mode == ViewConfirmDelete {
+		return m.updateConfirmDeleteMode(msg)
+	}
 	// Режим списка задач (основной)
 	return m.updateListMode(msg)
 }
@@ -60,6 +64,28 @@ func (m Model) updateTaskDeleted(msg taskDeletedMsg) (Model, tea.Cmd) {
 	}
 
 	return m, loadTasks(m.Ctx, m.Service)
+}
+
+func (m Model) updateConfirmDeleteMode(msg tea.Msg) (Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch key.String() {
+	case "y":
+		id := m.confirmDeleteTaskID
+		m.confirmDeleteTaskID = 0
+		m.Mode = ViewList
+		return m, deleteTask(m.Ctx, m.Service, id)
+
+	case "n", "esc":
+		m.confirmDeleteTaskID = 0
+		m.Mode = ViewList
+		return m, nil
+	}
+
+	return m, nil
 }
 
 func (m Model) updateTimeAdded(msg timeAddedMsg) (Model, tea.Cmd) {
@@ -125,8 +151,11 @@ func (m Model) updateListMode(msg tea.Msg) (Model, tea.Cmd) {
 		if len(m.Tasks) == 0 {
 			return m, nil
 		}
+
 		task := m.Tasks[m.Selected]
-		return m, deleteTask(m.Ctx, m.Service, task.Id)
+		m.Mode = ViewConfirmDelete
+		m.confirmDeleteTaskID = task.Id
+		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	}

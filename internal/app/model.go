@@ -14,6 +14,7 @@ type ViewMode int
 const (
 	ViewList ViewMode = iota
 	ViewCreate
+	ViewConfirmDelete
 )
 
 type Model struct {
@@ -23,6 +24,8 @@ type Model struct {
 	Tasks    []models.Task
 	Selected int
 	Mode     ViewMode
+
+	confirmDeleteTaskID int
 
 	TimerRunning bool
 	TimerTaskID  int
