@@ -2,59 +2,60 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/Andrew1996-la/timo/internal/models"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type TaskRepository struct {
-	db *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
+func NewTaskRepository(db *sql.DB) *TaskRepository {
 	return &TaskRepository{db: db}
 }
 
-func (t *TaskRepository) Create(ctx context.Context, title string) (*models.Task, error) {
-	var task models.Task
-
+func (r *TaskRepository) Create(ctx context.Context, title string) (*models.Task, error) {
 	query := `
-		INSERT INTO tasks (title)
-		VALUES ($1)
-		RETURNING id, title, created_at, deleted_at
+		INSERT INTO tasks (title, created_at)
+		VALUES (?, CURRENT_TIMESTAMP)
 	`
 
-	err := t.db.QueryRow(ctx, query, title).
-		Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt)
-
+	res, err := r.db.Exec(query, title)
 	if err != nil {
 		return nil, err
 	}
 
-	return &task, nil
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(ctx, int(id))
 }
 
-func (t *TaskRepository) Delete(ctx context.Context, id int) error {
+func (r *TaskRepository) Delete(ctx context.Context, id int) error {
 	query := `
 		UPDATE tasks
-		SET deleted_at = NOW()
-		where id = $1 and deleted_at IS NULL
-   `
+		SET deleted_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND deleted_at IS NULL
+	`
 
-	cmd, err := t.db.Exec(ctx, query, id)
+	res, err := r.db.Exec(query, id)
 	if err != nil {
 		return err
 	}
 
-	if cmd.RowsAffected() == 0 {
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
 		return errors.New("task not found or already deleted")
 	}
 
 	return nil
 }
 
-func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
+func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 	query := `
 		SELECT id, title, created_at, deleted_at, spent_seconds
 		FROM tasks
@@ -62,7 +63,7 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 		ORDER BY created_at DESC
 	`
 
-	rows, err := t.db.Query(ctx, query)
+	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -71,37 +72,45 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 	var tasks []models.Task
 
 	for rows.Next() {
-		var task models.Task
-
-		err = rows.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt, &task.SpentSeconds)
-
-		if err != nil {
+		var t models.Task
+		if err := rows.Scan(
+			&t.Id,
+			&t.Title,
+			&t.CreatedAt,
+			&t.DeletedAt,
+			&t.SpentSeconds,
+		); err != nil {
 			return nil, err
 		}
 
-		tasks = append(tasks, task)
+		tasks = append(tasks, t)
 	}
 
 	return tasks, nil
 }
 
-func (t *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, error) {
+func (r *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, error) {
 	query := `
 		SELECT id, title, created_at, deleted_at, spent_seconds
 		FROM tasks
-		WHERE id = $1 AND deleted_at IS NULL
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	row := t.db.QueryRow(ctx, query, id)
+	var t models.Task
 
-	var task models.Task
+	err := r.db.QueryRow(query, id).Scan(
+		&t.Id,
+		&t.Title,
+		&t.CreatedAt,
+		&t.DeletedAt,
+		&t.SpentSeconds,
+	)
 
-	err := row.Scan(&task.Id, &task.Title, &task.CreatedAt, &task.DeletedAt, &task.SpentSeconds)
 	if err != nil {
 		return nil, err
 	}
 
-	return &task, nil
+	return &t, nil
 }
 
 func (r *TaskRepository) AddTime(
@@ -111,9 +120,10 @@ func (r *TaskRepository) AddTime(
 ) error {
 	query := `
 		UPDATE tasks
-		SET spent_seconds = spent_seconds + $1
-		WHERE id = $2 AND deleted_at IS NULL
+		SET spent_seconds = spent_seconds + ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
-	_, err := r.db.Exec(ctx, query, seconds, id)
+
+	_, err := r.db.Exec(query, seconds, id)
 	return err
 }

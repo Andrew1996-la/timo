@@ -31,7 +31,7 @@ func (m Model) View() string {
 	}
 
 	if len(m.Tasks) == 0 {
-		return "No tasks yet.\n\npress q to quit"
+		return "No tasks yet.\n\n↑↓ select   enter start/pause   n new   d delete   q quit"
 	}
 
 	// UI отдельной функции
