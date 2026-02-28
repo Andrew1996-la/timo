@@ -15,6 +15,7 @@ const (
 	ViewList ViewMode = iota
 	ViewCreate
 	ViewConfirmDelete
+	ViewStats
 )
 
 type Model struct {
