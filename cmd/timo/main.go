@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/Andrew1996-la/timo/internal/app"
 	"github.com/Andrew1996-la/timo/internal/http"
@@ -26,20 +27,37 @@ func main() {
 	// инициализация сервиса
 	taskService := service.NewTaskService(taskRepo)
 
-	router := http.NewRouter(taskService)
-	server := http.New(":8080", router)
+	runHTTP := false
+	runCLI := false
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "--http":
+			runHTTP = true
+		case "--cli":
+			runCLI = true
+		}
+	}
 
-	// Запуск сервера в отдельной горутине
-	go func() {
+	if runHTTP {
+		router := http.NewRouter(taskService)
+		server := http.New(":8080", router)
 		log.Println("HTTP server started on :8080")
 		if err := server.Start(); err != nil {
 			log.Fatal(err)
 		}
-	}()
+		return
+	}
 
-	// Запуск терминального приложения
+	if runCLI {
+		p := tea.NewProgram(app.New(ctx, taskService))
+		if _, err := p.Run(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	// По умолчанию можно запускать CLI
 	p := tea.NewProgram(app.New(ctx, taskService))
-
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
