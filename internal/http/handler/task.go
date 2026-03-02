@@ -86,6 +86,48 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, task)
 }
 
+// AddTime добавляет указанное количество секунд к задаче
+func (h *TaskHandler) AddTime(w http.ResponseWriter, r *http.Request) {
+	// Получаем ID из URL
+	// Пример URL: /tasks/1/time
+	idStr := strings.TrimPrefix(r.URL.Path, "/tasks/")
+	idStr = strings.TrimSuffix(idStr, "/time") // убираем "/time"
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "invalid task id", http.StatusBadRequest)
+		return
+	}
+
+	// Читаем body с количеством секунд
+	var req struct {
+		Seconds int `json:"seconds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Seconds <= 0 {
+		http.Error(w, "seconds must be positive", http.StatusBadRequest)
+		return
+	}
+
+	// Добавляем время через сервис
+	if err := h.service.AddTime(r.Context(), id, req.Seconds); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Возвращаем обновлённую задачу
+	task, err := h.service.GetById(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, task)
+}
+
 // writeJSON вспомогательная функция для ответа
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
