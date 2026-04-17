@@ -2,63 +2,91 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
-	"os"
 
 	"github.com/Andrew1996-la/timo/internal/app"
-	"github.com/Andrew1996-la/timo/internal/http"
+	httptransport "github.com/Andrew1996-la/timo/internal/http"
 	"github.com/Andrew1996-la/timo/internal/repository"
 	"github.com/Andrew1996-la/timo/internal/service"
 	"github.com/Andrew1996-la/timo/internal/storage"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type container struct {
+	taskService *service.TaskService
+	cleanup     func()
+}
+
 func main() {
 	ctx := context.Background()
 
-	db, err := storage.NewSQLite()
+	c, err := newContainer()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer c.cleanup()
 
-	// инициализация репозитория
+	mode := parseMode()
+
+	switch mode {
+	case "http":
+		if err := runHTTP(c.taskService); err != nil {
+			log.Fatal(err)
+		}
+	case "cli":
+		if err := runCLI(ctx, c.taskService); err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatalf("unknown mode: %s", mode)
+	}
+}
+
+func newContainer() (*container, error) {
+	db, err := storage.NewSQLite()
+	if err != nil {
+		return nil, err
+	}
+
 	taskRepo := repository.NewTaskRepository(db)
-	// инициализация сервиса
 	taskService := service.NewTaskService(taskRepo)
 
-	runHTTP := false
-	runCLI := false
-	for _, arg := range os.Args[1:] {
-		switch arg {
-		case "--http":
-			runHTTP = true
-		case "--cli":
-			runCLI = true
-		}
-	}
+	return &container{
+		taskService: taskService,
+		cleanup: func() {
+			if err := db.Close(); err != nil {
+				log.Printf("failed to close db: %v", err)
+			}
+		},
+	}, nil
+}
 
-	if runHTTP {
-		router := http.NewRouter(taskService)
-		server := http.New(":8080", router)
-		log.Println("HTTP server started on :8080")
-		if err := server.Start(); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
+func parseMode() string {
+	httpMode := flag.Bool("http", false, "run HTTP server")
+	cliMode := flag.Bool("cli", false, "run CLI app")
+	flag.Parse()
 
-	if runCLI {
-		p := tea.NewProgram(app.New(ctx, taskService))
-		if _, err := p.Run(); err != nil {
-			log.Fatal(err)
-		}
-		return
+	switch {
+	case *httpMode:
+		return "http"
+	case *cliMode:
+		return "cli"
+	default:
+		return "cli"
 	}
+}
 
-	// По умолчанию можно запускать CLI
+func runHTTP(taskService *service.TaskService) error {
+	router := httptransport.NewRouter(taskService)
+	server := httptransport.New(":8080", router)
+
+	log.Println("HTTP server started on :8080")
+	return server.Start()
+}
+
+func runCLI(ctx context.Context, taskService *service.TaskService) error {
 	p := tea.NewProgram(app.New(ctx, taskService))
-	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
-	}
+	_, err := p.Run()
+	return err
 }
