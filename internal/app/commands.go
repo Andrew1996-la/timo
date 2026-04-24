@@ -8,31 +8,44 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func loadTasks(ctx context.Context, s *service.TaskService) tea.Cmd {
+func loadTasks(ctx context.Context, taskService *service.TaskService) tea.Cmd {
 	return func() tea.Msg {
-		tasks, err := s.GetAll(ctx)
-		return tasksLoadedMsg{tasks: tasks, err: err}
+		tasks, err := taskService.GetAll(ctx)
+
+		return tasksLoadedMsg{
+			tasks: tasks,
+			err:   err,
+		}
 	}
 }
 
-func createTask(ctx context.Context, s *service.TaskService, title string) tea.Cmd {
+func createTask(ctx context.Context, taskService *service.TaskService, title string) tea.Cmd {
 	return func() tea.Msg {
-		_, err := s.Create(ctx, title)
-		return taskCreatedMsg{err: err}
+		_, err := taskService.Create(ctx, title)
+
+		return taskCreatedMsg{
+			err: err,
+		}
 	}
 }
 
-func deleteTask(ctx context.Context, s *service.TaskService, id int) tea.Cmd {
+func deleteTask(ctx context.Context, taskService *service.TaskService, id int) tea.Cmd {
 	return func() tea.Msg {
-		err := s.Delete(ctx, id)
-		return taskDeletedMsg{err: err}
+		err := taskService.Delete(ctx, id)
+
+		return taskDeletedMsg{
+			err: err,
+		}
 	}
 }
 
-func addTime(ctx context.Context, s *service.TaskService, id int, seconds int) tea.Cmd {
+func addTime(ctx context.Context, taskService *service.TaskService, id int, seconds int) tea.Cmd {
 	return func() tea.Msg {
-		err := s.AddTime(ctx, id, seconds)
-		return timeAddedMsg{err: err}
+		err := taskService.AddTime(ctx, id, seconds)
+
+		return timeAddedMsg{
+			err: err,
+		}
 	}
 }
 
