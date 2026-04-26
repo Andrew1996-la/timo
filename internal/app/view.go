@@ -8,33 +8,45 @@ import (
 
 func (m Model) View() string {
 	if m.Err != nil {
-		return "Error: " + m.Err.Error() + "\n\npress q to quit"
+		return m.renderError()
 	}
 
-	if m.Mode == ViewCreate {
-		return fmt.Sprintf("Create task:\n\n%s\n\nenter save • esc cancel", m.Input.View())
+	switch m.Mode {
+	case ViewCreate:
+		return m.renderCreateView()
+	case ViewConfirmDelete:
+		return m.renderConfirmDeleteView()
+	default:
+		return m.renderListView()
 	}
+}
 
-	if m.Mode == ViewConfirmDelete {
-		taskTitle := ""
-		for _, t := range m.Tasks {
-			if t.Id == m.confirmDeleteTaskID {
-				taskTitle = t.Title
-				break
-			}
-		}
+func (m Model) renderError() string {
+	return fmt.Sprintf(
+		"Error: %s\n\npress q to quit",
+		m.Err.Error(),
+	)
+}
 
-		return fmt.Sprintf(
-			"Delete task:\n\n❗ %s\n\n[y] delete   [n] cancel",
-			taskTitle,
-		)
-	}
+func (m Model) renderCreateView() string {
+	return fmt.Sprintf(
+		"Create task:\n\n%s\n\nenter save • esc cancel",
+		m.Input.View(),
+	)
+}
 
+func (m Model) renderConfirmDeleteView() string {
+	return fmt.Sprintf(
+		"Delete task:\n\n❗ %s\n\n[y] delete   [n] cancel",
+		m.confirmDeleteTaskTitle(),
+	)
+}
+
+func (m Model) renderListView() string {
 	if len(m.Tasks) == 0 {
-		return "No tasks yet.\n\n↑↓ select   enter start/pause   n new   d delete   q quit"
+		return m.renderEmptyListView()
 	}
 
-	// UI отдельной функции
 	return ui.RenderTaskList(ui.TaskView{
 		Tasks:        m.Tasks,
 		Selected:     m.Selected,
@@ -42,4 +54,18 @@ func (m Model) View() string {
 		TimerTaskID:  m.TimerTaskID,
 		TimerStarted: m.TimerStarted,
 	})
+}
+
+func (m Model) renderEmptyListView() string {
+	return "No tasks yet.\n\n↑↓ select   enter start/pause   n new   d delete   q quit"
+}
+
+func (m Model) confirmDeleteTaskTitle() string {
+	for _, task := range m.Tasks {
+		if task.Id == m.confirmDeleteTaskID {
+			return task.Title
+		}
+	}
+
+	return "unknown task"
 }
