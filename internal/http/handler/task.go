@@ -42,7 +42,7 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
-	id, err := parseTaskID(r.URL.Path)
+	id, err := parseTaskID(r.URL.Path, "/tasks/")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid task id")
 		return
@@ -64,7 +64,7 @@ func (h *TaskHandler) AddTime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseTaskIDFromTimePath(r.URL.Path)
+	id, err := parseTaskID(r.URL.Path, "/tasks/", "/time")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid task id")
 		return
@@ -98,7 +98,7 @@ func (h *TaskHandler) AddTime(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) getAll(w http.ResponseWriter, r *http.Request) {
 	tasks, err := h.service.GetAll(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to get tasks")
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	task, err := h.service.Create(r.Context(), req.Title)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, err)
 		return
 	}
 
@@ -140,34 +140,28 @@ func (h *TaskHandler) delete(w http.ResponseWriter, r *http.Request, id int) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func parseTaskID(path string) (int, error) {
-	idStr := strings.TrimPrefix(path, "/tasks/")
-	if idStr == "" || strings.Contains(idStr, "/") {
+func parseTaskID(path string, prefix string, suffix ...string) (int, error) {
+	value := strings.TrimPrefix(path, prefix)
+
+	if len(suffix) > 0 {
+		if !strings.HasSuffix(value, suffix[0]) {
+			return 0, errors.New("invalid path")
+		}
+
+		value = strings.TrimSuffix(value, suffix[0])
+	}
+
+	if value == "" || strings.Contains(value, "/") {
 		return 0, errors.New("invalid path")
 	}
 
-	id, err := strconv.Atoi(idStr)
+	id, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, err
 	}
 
-	return id, nil
-}
-
-func parseTaskIDFromTimePath(path string) (int, error) {
-	if !strings.HasSuffix(path, "/time") {
-		return 0, errors.New("invalid path")
-	}
-
-	idStr := strings.TrimPrefix(path, "/tasks/")
-	idStr = strings.TrimSuffix(idStr, "/time")
-	if idStr == "" || strings.Contains(idStr, "/") {
-		return 0, errors.New("invalid path")
-	}
-
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		return 0, err
+	if id <= 0 {
+		return 0, errors.New("id must be positive")
 	}
 
 	return id, nil
@@ -175,7 +169,11 @@ func parseTaskIDFromTimePath(path string) (int, error) {
 
 func decodeJSON(r *http.Request, dst any) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(dst)
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	return decoder.Decode(dst)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
@@ -183,7 +181,9 @@ func writeMethodNotAllowed(w http.ResponseWriter) {
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
-	writeError(w, http.StatusBadRequest, err.Error())
+	status := http.StatusBadRequest
+	
+	writeError(w, status, err.Error())
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
@@ -195,5 +195,6 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	_ = json.NewEncoder(w).Encode(v)
 }
