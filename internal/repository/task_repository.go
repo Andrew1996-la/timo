@@ -9,22 +9,24 @@ import (
 	"github.com/Andrew1996-la/timo/internal/models"
 )
 
-var (
-	ErrTaskNotFound      = errors.New("task not found")
-	ErrTaskAlreadyDelete = errors.New("task already deleted")
-)
+var ErrTaskNotFound = errors.New("task not found")
 
 type TaskRepository struct {
 	db *sql.DB
 }
 
 func NewTaskRepository(db *sql.DB) *TaskRepository {
-	return &TaskRepository{db: db}
+	return &TaskRepository{
+		db: db,
+	}
 }
 
-const baseTaskSelect = `
-	SELECT id, title, created_at, deleted_at, spent_seconds
-	FROM tasks
+const taskFields = `
+	id,
+	title,
+	created_at,
+	deleted_at,
+	spent_seconds
 `
 
 func (r *TaskRepository) Create(ctx context.Context, title string) (*models.Task, error) {
@@ -33,53 +35,31 @@ func (r *TaskRepository) Create(ctx context.Context, title string) (*models.Task
 		VALUES (?, CURRENT_TIMESTAMP)
 	`
 
-	res, err := r.db.ExecContext(ctx, query, title)
+	result, err := r.db.ExecContext(ctx, query, title)
 	if err != nil {
 		return nil, fmt.Errorf("create task: %w", err)
 	}
 
-	id, err := res.LastInsertId()
+	id, err := result.LastInsertId()
 	if err != nil {
 		return nil, fmt.Errorf("get created task id: %w", err)
 	}
 
 	task, err := r.GetByID(ctx, int(id))
 	if err != nil {
-		return nil, fmt.Errorf("fetch created task: %w", err)
+		return nil, fmt.Errorf("get created task: %w", err)
 	}
 
 	return task, nil
 }
 
-func (r *TaskRepository) Delete(ctx context.Context, id int) error {
-	const query = `
-		UPDATE tasks
-		SET deleted_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND deleted_at IS NULL
-	`
-
-	res, err := r.db.ExecContext(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("delete task id=%d: %w", id, err)
-	}
-
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete task id=%d: rows affected: %w", id, err)
-	}
-
-	if rows == 0 {
-		return ErrTaskNotFound
-	}
-
-	return nil
-}
-
 func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
-	query := baseTaskSelect + `
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM tasks
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
-	`
+	`, taskFields)
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -106,21 +86,37 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 }
 
 func (r *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, error) {
-	query := baseTaskSelect + `
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM tasks
 		WHERE id = ? AND deleted_at IS NULL
-	`
+	`, taskFields)
 
-	row := r.db.QueryRowContext(ctx, query, id)
-
-	task, err := scanTask(row)
+	task, err := scanTask(r.db.QueryRowContext(ctx, query, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskNotFound
 		}
+
 		return nil, fmt.Errorf("get task id=%d: %w", id, err)
 	}
 
 	return &task, nil
+}
+
+func (r *TaskRepository) Delete(ctx context.Context, id int) error {
+	const query = `
+		UPDATE tasks
+		SET deleted_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND deleted_at IS NULL
+	`
+
+	res, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("delete task id=%d: %w", id, err)
+	}
+
+	return checkRowsAffected(res, ErrTaskNotFound)
 }
 
 func (r *TaskRepository) AddTime(ctx context.Context, id int, seconds int) error {
@@ -135,12 +131,40 @@ func (r *TaskRepository) AddTime(ctx context.Context, id int, seconds int) error
 		return fmt.Errorf("add time to task id=%d: %w", id, err)
 	}
 
+	return checkRowsAffected(res, ErrTaskNotFound)
+}
+
+func checkRowsAffected(res sql.Result, notFoundErr error) error {
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("add time to task id=%d: rows affected: %w", id, err)
+		return fmt.Errorf("rows affected: %w", err)
 	}
 
 	if rows == 0 {
+		return notFoundErr
+	}
+
+	return nil
+}
+
+func (r *TaskRepository) execTaskUpdate(
+	ctx context.Context,
+	query string,
+	arg1 any,
+	arg2 any,
+	action string,
+) error {
+	result, err := r.db.ExecContext(ctx, query, arg1, arg2)
+	if err != nil {
+		return fmt.Errorf("%s: %w", action, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: rows affected: %w", action, err)
+	}
+
+	if rowsAffected == 0 {
 		return ErrTaskNotFound
 	}
 
