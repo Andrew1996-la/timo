@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Andrew1996-la/timo/internal/repository"
 	"github.com/Andrew1996-la/timo/internal/service"
 )
 
@@ -15,7 +16,9 @@ type TaskHandler struct {
 }
 
 func NewTaskHandler(service *service.TaskService) *TaskHandler {
-	return &TaskHandler{service: service}
+	return &TaskHandler{
+		service: service,
+	}
 }
 
 type createTaskRequest struct {
@@ -59,7 +62,7 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) AddTime(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodPatch {
 		writeMethodNotAllowed(w)
 		return
 	}
@@ -76,17 +79,12 @@ func (h *TaskHandler) AddTime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Seconds <= 0 {
-		writeError(w, http.StatusBadRequest, "seconds must be positive")
-		return
-	}
-
 	if err := h.service.AddTime(r.Context(), id, req.Seconds); err != nil {
 		writeServiceError(w, err)
 		return
 	}
 
-	task, err := h.service.GetById(r.Context(), id)
+	task, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -122,7 +120,7 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) getByID(w http.ResponseWriter, r *http.Request, id int) {
-	task, err := h.service.GetById(r.Context(), id)
+	task, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -181,9 +179,18 @@ func writeMethodNotAllowed(w http.ResponseWriter) {
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
-	status := http.StatusBadRequest
-	
-	writeError(w, status, err.Error())
+	switch {
+	case errors.Is(err, repository.ErrTaskNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrInvalidTaskID):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrEmptyTaskTitle):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrInvalidDuration):
+		writeError(w, http.StatusBadRequest, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, "internal server error")
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
