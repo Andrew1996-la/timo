@@ -14,14 +14,14 @@ func NewRouter(taskService *service.TaskService) http.Handler {
 	taskHandler := handler.NewTaskHandler(taskService)
 
 	mux.HandleFunc("/tasks", taskHandler.Tasks)
-	mux.HandleFunc("/tasks/", routeTaskByID(taskHandler))
+	mux.HandleFunc("/tasks/", taskRoute(taskHandler))
 
 	return mux
 }
 
-func routeTaskByID(taskHandler *handler.TaskHandler) http.HandlerFunc {
+func taskRoute(taskHandler *handler.TaskHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if isAddTimeRoute(r) {
+		if isTaskTimePath(r.URL.Path) {
 			taskHandler.AddTime(w, r)
 			return
 		}
@@ -30,7 +30,6 @@ func routeTaskByID(taskHandler *handler.TaskHandler) http.HandlerFunc {
 	}
 }
 
-func isAddTimeRoute(r *http.Request) bool {
-	return r.Method == http.MethodPatch &&
-		strings.HasSuffix(r.URL.Path, "/time")
+func isTaskTimePath(path string) bool {
+	return strings.HasSuffix(path, "/time")
 }
