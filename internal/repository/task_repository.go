@@ -111,12 +111,12 @@ func (r *TaskRepository) Delete(ctx context.Context, id int) error {
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	res, err := r.db.ExecContext(ctx, query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("delete task id=%d: %w", id, err)
 	}
 
-	return checkRowsAffected(res, ErrTaskNotFound)
+	return checkRowsAffected(result, ErrTaskNotFound)
 }
 
 func (r *TaskRepository) AddTime(ctx context.Context, id int, seconds int) error {
@@ -126,46 +126,22 @@ func (r *TaskRepository) AddTime(ctx context.Context, id int, seconds int) error
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	res, err := r.db.ExecContext(ctx, query, seconds, id)
+	result, err := r.db.ExecContext(ctx, query, seconds, id)
 	if err != nil {
 		return fmt.Errorf("add time to task id=%d: %w", id, err)
 	}
 
-	return checkRowsAffected(res, ErrTaskNotFound)
+	return checkRowsAffected(result, ErrTaskNotFound)
 }
 
-func checkRowsAffected(res sql.Result, notFoundErr error) error {
-	rows, err := res.RowsAffected()
+func checkRowsAffected(result sql.Result, notFoundErr error) error {
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("rows affected: %w", err)
 	}
 
-	if rows == 0 {
-		return notFoundErr
-	}
-
-	return nil
-}
-
-func (r *TaskRepository) execTaskUpdate(
-	ctx context.Context,
-	query string,
-	arg1 any,
-	arg2 any,
-	action string,
-) error {
-	result, err := r.db.ExecContext(ctx, query, arg1, arg2)
-	if err != nil {
-		return fmt.Errorf("%s: %w", action, err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("%s: rows affected: %w", action, err)
-	}
-
 	if rowsAffected == 0 {
-		return ErrTaskNotFound
+		return notFoundErr
 	}
 
 	return nil
