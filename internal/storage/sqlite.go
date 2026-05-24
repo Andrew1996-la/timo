@@ -2,42 +2,54 @@ package storage
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
 
+const (
+	appDirName = "timo"
+	dbFileName = "timo.db"
+	sqliteDriverName = "sqlite"
+)
+
 func NewSQLite() (*sql.DB, error) {
-	// Получаем системную директорию для данных
-	dir, err := os.UserConfigDir()
+	dbPath, err := sqlitePath()
 	if err != nil {
 		return nil, err
 	}
 
-	// Создаём папку timo
-	appDir := filepath.Join(dir, "timo")
-	if err := os.MkdirAll(appDir, 0755); err != nil {
-		return nil, err
-	}
-
-	// Полный путь к БД
-	dbPath := filepath.Join(appDir, "timo.db")
-
-	// Открываем SQLite
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open(sqliteDriverName, dbPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, err
+		db.Close()
+		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
-	// применяем миграции
 	if err := Migrate(db); err != nil {
-		return nil, err
+		db.Close()
+		return nil, fmt.Errorf("migrate sqlite: %w", err)
 	}
 
 	return db, nil
+}
+
+func sqlitePath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("get user config dir: %w", err)
+	}
+
+	appDir := filepath.Join(configDir, appDirName)
+
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		return "", fmt.Errorf("create app dir: %w", err)
+	}
+
+	return filepath.Join(appDir, dbFileName), nil
 }
