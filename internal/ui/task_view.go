@@ -2,12 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Andrew1996-la/timo/internal/models"
 )
 
-// TaskView — данные для отображения задач
+const taskTitleWidth = 20
+
 type TaskView struct {
 	Tasks        []models.Task
 	Selected     int
@@ -16,42 +18,69 @@ type TaskView struct {
 	TimerStarted time.Time
 }
 
-// RenderTaskList — строит строку с задачами для терминала
 func RenderTaskList(v TaskView) string {
-	result := "Tasks:\n\n"
+	var builder strings.Builder
 
-	for i, t := range v.Tasks {
-		cursor := "  "
-		if i == v.Selected {
-			cursor = "> "
-		}
+	builder.WriteString("Tasks:\n\n")
 
-		isRunning := v.TimerRunning && v.TimerTaskID == t.Id
-		statusIcon := "⏸"
-		if isRunning {
-			statusIcon = "▶"
-		}
-
-		seconds := t.SpentSeconds
-		if isRunning {
-			seconds += int(time.Since(v.TimerStarted).Seconds())
-		}
-
-		line := fmt.Sprintf("%s %s %-20s %s", cursor, statusIcon, t.Title, formatSeconds(seconds))
-		if isRunning {
-			line += " ⚙️"
-		}
-
-		result += line + "\n"
+	for i, task := range v.Tasks {
+		builder.WriteString(renderTaskLine(v, i, task))
+		builder.WriteString("\n")
 	}
 
-	result += "\n↑↓ select   enter start/pause   n new   d delete   q quit"
-	return result
+	builder.WriteString("\n↑↓ select   enter start/pause   n new   d delete   q quit")
+
+	return builder.String()
 }
 
-func formatSeconds(sec int) string {
-	h := sec / 3600
-	m := (sec % 3600) / 60
-	s := sec % 60
-	return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+func renderTaskLine(v TaskView, index int, task models.Task) string {
+	isRunning := isTaskRunning(v, task)
+
+	seconds := task.SpentSeconds
+	if isRunning {
+		seconds += int(time.Since(v.TimerStarted).Seconds())
+	}
+
+	line := fmt.Sprintf(
+		"%s %s %-*s %s",
+		cursor(index, v.Selected),
+		statusIcon(isRunning),
+		taskTitleWidth,
+		task.Title,
+		formatSeconds(seconds),
+	)
+
+	if isRunning {
+		line += " ⚙️"
+	}
+
+	return line
+}
+
+func isTaskRunning(v TaskView, task models.Task) bool {
+	return v.TimerRunning && v.TimerTaskID == task.Id
+}
+
+func cursor(index int, selected int) string {
+	if index == selected {
+		return ">"
+	}
+
+	return " "
+}
+
+func statusIcon(isRunning bool) string {
+	if isRunning {
+		return "▶"
+	}
+
+	return "⏸"
+}
+
+func formatSeconds(seconds int) string {
+	hours := seconds / 3600
+	minutes := seconds % 3600 / 60
+	secs := seconds % 60
+
+	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, secs)
 }
