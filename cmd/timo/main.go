@@ -2,8 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Andrew1996-la/timo/internal/app"
 	httptransport "github.com/Andrew1996-la/timo/internal/http"
@@ -13,13 +19,32 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const (
+	modeHTTP = "http"
+	modeCLI  = "cli"
+
+	shutdownTimeout = 5 * time.Second
+)
+
+type config struct {
+	mode string
+	addr string
+}
+
 type container struct {
 	taskService *service.TaskService
 	cleanup     func()
 }
 
 func main() {
-	ctx := context.Background()
+	cfg := parseConfig()
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
 	c, err := newContainer()
 	if err != nil {
@@ -27,19 +52,19 @@ func main() {
 	}
 	defer c.cleanup()
 
-	mode := parseMode()
+	if err := run(ctx, cfg, c); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	switch mode {
-	case "http":
-		if err := runHTTP(c.taskService); err != nil {
-			log.Fatal(err)
-		}
-	case "cli":
-		if err := runCLI(ctx, c.taskService); err != nil {
-			log.Fatal(err)
-		}
+func run(ctx context.Context, cfg config, c *container) error {
+	switch cfg.mode {
+	case modeHTTP:
+		return runHTTP(ctx, cfg.addr, c.taskService)
+	case modeCLI:
+		return runCLI(ctx, c.taskService)
 	default:
-		log.Fatalf("unknown mode: %s", mode)
+		return errors.New("unknown mode: " + cfg.mode)
 	}
 }
 
@@ -62,31 +87,71 @@ func newContainer() (*container, error) {
 	}, nil
 }
 
-func parseMode() string {
+func parseConfig() config {
 	httpMode := flag.Bool("http", false, "run HTTP server")
 	cliMode := flag.Bool("cli", false, "run CLI app")
+	addr := flag.String("addr", ":8080", "HTTP server address")
+
 	flag.Parse()
 
-	switch {
-	case *httpMode:
-		return "http"
-	case *cliMode:
-		return "cli"
-	default:
-		return "cli"
+	mode := modeCLI
+	if *httpMode {
+		mode = modeHTTP
+	}
+
+	if *cliMode {
+		mode = modeCLI
+	}
+
+	return config{
+		mode: mode,
+		addr: *addr,
 	}
 }
 
-func runHTTP(taskService *service.TaskService) error {
+func runHTTP(
+	ctx context.Context,
+	addr string,
+	taskService *service.TaskService,
+) error {
 	router := httptransport.NewRouter(taskService)
-	server := httptransport.New(":8080", router)
+	server := httptransport.New(addr, router)
 
-	log.Println("HTTP server started on :8080")
-	return server.Start()
+	errCh := make(chan error, 1)
+
+	go func() {
+		log.Printf("HTTP server started on %s", addr)
+
+		if err := server.Start(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			shutdownTimeout,
+		)
+		defer cancel()
+
+		log.Println("shutting down HTTP server")
+
+		return server.Shutdown(shutdownCtx)
+
+	case err := <-errCh:
+		return err
+	}
 }
 
 func runCLI(ctx context.Context, taskService *service.TaskService) error {
-	p := tea.NewProgram(app.New(ctx, taskService))
-	_, err := p.Run()
+	program := tea.NewProgram(app.New(ctx, taskService))
+
+	_, err := program.Run()
+
 	return err
 }
