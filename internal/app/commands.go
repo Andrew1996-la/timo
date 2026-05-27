@@ -4,11 +4,18 @@ import (
 	"context"
 	"time"
 
-	"github.com/Andrew1996-la/timo/internal/service"
+	"github.com/Andrew1996-la/timo/internal/models"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func loadTasks(ctx context.Context, taskService *service.TaskService) tea.Cmd {
+type taskService interface {
+	GetAll(ctx context.Context) ([]models.Task, error)
+	Create(ctx context.Context, title string) (*models.Task, error)
+	Delete(ctx context.Context, id int) error
+	AddTime(ctx context.Context, id int, seconds int) error
+}
+
+func loadTasks(ctx context.Context, taskService taskService) tea.Cmd {
 	return func() tea.Msg {
 		tasks, err := taskService.GetAll(ctx)
 
@@ -19,7 +26,7 @@ func loadTasks(ctx context.Context, taskService *service.TaskService) tea.Cmd {
 	}
 }
 
-func createTask(ctx context.Context, taskService *service.TaskService, title string) tea.Cmd {
+func createTask(ctx context.Context, taskService taskService, title string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := taskService.Create(ctx, title)
 
@@ -29,7 +36,7 @@ func createTask(ctx context.Context, taskService *service.TaskService, title str
 	}
 }
 
-func deleteTask(ctx context.Context, taskService *service.TaskService, id int) tea.Cmd {
+func deleteTask(ctx context.Context, taskService taskService, id int) tea.Cmd {
 	return func() tea.Msg {
 		err := taskService.Delete(ctx, id)
 
@@ -39,7 +46,12 @@ func deleteTask(ctx context.Context, taskService *service.TaskService, id int) t
 	}
 }
 
-func addTime(ctx context.Context, taskService *service.TaskService, id int, seconds int) tea.Cmd {
+func addTime(
+	ctx context.Context,
+	taskService taskService,
+	id int,
+	seconds int,
+) tea.Cmd {
 	return func() tea.Msg {
 		err := taskService.AddTime(ctx, id, seconds)
 
