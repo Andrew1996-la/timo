@@ -5,9 +5,15 @@ import (
 	"time"
 
 	"github.com/Andrew1996-la/timo/internal/models"
-	"github.com/Andrew1996-la/timo/internal/service"
 	"github.com/charmbracelet/bubbles/textinput"
 )
+
+type taskService interface {
+	GetAll(ctx context.Context) ([]models.Task, error)
+	Create(ctx context.Context, title string) (*models.Task, error)
+	Delete(ctx context.Context, id int) error
+	AddTime(ctx context.Context, id int, seconds int) error
+}
 
 type ViewMode int
 
@@ -20,13 +26,13 @@ const (
 
 type Model struct {
 	Ctx     context.Context
-	Service *service.TaskService
+	Service taskService
 
 	Tasks    []models.Task
 	Selected int
 	Mode     ViewMode
 
-	confirmDeleteTaskID int
+	ConfirmDeleteTaskID int
 
 	TimerRunning bool
 	TimerTaskID  int
@@ -36,12 +42,21 @@ type Model struct {
 	Err   error
 }
 
-// async messages
 type tasksLoadedMsg struct {
 	tasks []models.Task
 	err   error
 }
-type taskCreatedMsg struct{ err error }
-type taskDeletedMsg struct{ err error }
+
+type taskCreatedMsg struct {
+	err error
+}
+
+type taskDeletedMsg struct {
+	err error
+}
+
+type timeAddedMsg struct {
+	err error
+}
+
 type tickMsg time.Time
-type timeAddedMsg struct{ err error }

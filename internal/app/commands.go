@@ -4,16 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/Andrew1996-la/timo/internal/models"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-type taskService interface {
-	GetAll(ctx context.Context) ([]models.Task, error)
-	Create(ctx context.Context, title string) (*models.Task, error)
-	Delete(ctx context.Context, id int) error
-	AddTime(ctx context.Context, id int, seconds int) error
-}
 
 func loadTasks(ctx context.Context, taskService taskService) tea.Cmd {
 	return func() tea.Msg {
