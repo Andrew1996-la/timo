@@ -32,7 +32,7 @@ type Model struct {
 	Selected int
 	Mode     ViewMode
 
-	ConfirmDeleteTaskID int
+	confirmDeleteTaskID int
 
 	TimerRunning bool
 	TimerTaskID  int
