@@ -49,7 +49,7 @@ func (m Model) updateTasksLoaded(msg tasksLoadedMsg) Model {
 	}
 
 	m.Tasks = msg.tasks
-	m.normalizeSelected()
+	m = m.normalizeSelected()
 
 	return m
 }
@@ -172,9 +172,9 @@ func (m Model) updateListMode(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch key.String() {
 	case "up":
-		m.moveSelectionUp()
+		return m.moveSelectionUp(), nil
 	case "down":
-		m.moveSelectionDown()
+		return m.moveSelectionDown(), nil
 	case "n":
 		return m.openCreateMode()
 	case "enter":
@@ -183,21 +183,25 @@ func (m Model) updateListMode(msg tea.Msg) (Model, tea.Cmd) {
 		return m.openDeleteConfirm()
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	default:
+		return m, nil
 	}
-
-	return m, nil
 }
 
-func (m *Model) moveSelectionUp() {
+func (m Model) moveSelectionUp() Model {
 	if m.Selected > 0 {
 		m.Selected--
 	}
+
+	return m
 }
 
-func (m *Model) moveSelectionDown() {
+func (m Model) moveSelectionDown() Model {
 	if m.Selected < len(m.Tasks)-1 {
 		m.Selected++
 	}
+
+	return m
 }
 
 func (m Model) openCreateMode() (Model, tea.Cmd) {
@@ -263,10 +267,10 @@ func (m Model) stopOrSwitchTimer(selectedTaskID int) (Model, tea.Cmd) {
 	return m, tea.Batch(saveTimeCmd, tick())
 }
 
-func (m *Model) normalizeSelected() {
+func (m Model) normalizeSelected() Model {
 	if len(m.Tasks) == 0 {
 		m.Selected = 0
-		return
+		return m
 	}
 
 	if m.Selected >= len(m.Tasks) {
@@ -276,6 +280,8 @@ func (m *Model) normalizeSelected() {
 	if m.Selected < 0 {
 		m.Selected = 0
 	}
+
+	return m
 }
 
 func (m Model) withError(err error) Model {
