@@ -6,6 +6,14 @@ import (
 	"github.com/Andrew1996-la/timo/internal/ui"
 )
 
+const (
+	quitHelp       = "press q to quit"
+	createHelp     = "enter save • esc cancel"
+	confirmHelp    = "[y] delete   [n] cancel"
+	emptyListHelp  = "↑↓ select   enter start/pause   n new   d delete   q quit"
+	unknownTask    = "unknown task"
+)
+
 func (m Model) View() string {
 	if m.Err != nil {
 		return m.renderError()
@@ -22,23 +30,18 @@ func (m Model) View() string {
 }
 
 func (m Model) renderError() string {
-	return fmt.Sprintf(
-		"Error: %s\n\npress q to quit",
-		m.Err.Error(),
-	)
+	return fmt.Sprintf("Error: %s\n\n%s", m.Err.Error(), quitHelp)
 }
 
 func (m Model) renderCreateView() string {
-	return fmt.Sprintf(
-		"Create task:\n\n%s\n\nenter save • esc cancel",
-		m.Input.View(),
-	)
+	return fmt.Sprintf("Create task:\n\n%s\n\n%s", m.Input.View(), createHelp)
 }
 
 func (m Model) renderConfirmDeleteView() string {
 	return fmt.Sprintf(
-		"Delete task:\n\n❗ %s\n\n[y] delete   [n] cancel",
+		"Delete task:\n\n❗ %s\n\n%s",
 		m.confirmDeleteTaskTitle(),
+		confirmHelp,
 	)
 }
 
@@ -57,7 +60,7 @@ func (m Model) renderListView() string {
 }
 
 func (m Model) renderEmptyListView() string {
-	return "No tasks yet.\n\n↑↓ select   enter start/pause   n new   d delete   q quit"
+	return "No tasks yet.\n\n" + emptyListHelp
 }
 
 func (m Model) confirmDeleteTaskTitle() string {
@@ -67,5 +70,5 @@ func (m Model) confirmDeleteTaskTitle() string {
 		}
 	}
 
-	return "unknown task"
+	return unknownTask
 }
