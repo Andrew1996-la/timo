@@ -11,6 +11,11 @@ import (
 	"github.com/Andrew1996-la/timo/internal/service"
 )
 
+const (
+	tasksPathPrefix = "/tasks/"
+	timePathSuffix  = "/time"
+)
+
 type TaskHandler struct {
 	service *service.TaskService
 }
@@ -45,7 +50,7 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
-	id, err := parseTaskID(r.URL.Path, "/tasks/")
+	id, err := parseTaskID(r.URL.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid task id")
 		return
@@ -67,7 +72,7 @@ func (h *TaskHandler) AddTime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseTaskID(r.URL.Path, "/tasks/", "/time")
+	id, err := parseTaskIDFromTimePath(r.URL.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid task id")
 		return
@@ -138,15 +143,23 @@ func (h *TaskHandler) delete(w http.ResponseWriter, r *http.Request, id int) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func parseTaskID(path string, prefix string, suffix ...string) (int, error) {
+func parseTaskID(path string) (int, error) {
+	return parseIDFromPath(path, tasksPathPrefix, "")
+}
+
+func parseTaskIDFromTimePath(path string) (int, error) {
+	return parseIDFromPath(path, tasksPathPrefix, timePathSuffix)
+}
+
+func parseIDFromPath(path string, prefix string, suffix string) (int, error) {
 	value := strings.TrimPrefix(path, prefix)
 
-	if len(suffix) > 0 {
-		if !strings.HasSuffix(value, suffix[0]) {
+	if suffix != "" {
+		if !strings.HasSuffix(value, suffix) {
 			return 0, errors.New("invalid path")
 		}
 
-		value = strings.TrimSuffix(value, suffix[0])
+		value = strings.TrimSuffix(value, suffix)
 	}
 
 	if value == "" || strings.Contains(value, "/") {
