@@ -8,20 +8,25 @@ import (
 	"github.com/Andrew1996-la/timo/internal/service"
 )
 
+const (
+	tasksPath    = "/tasks"
+	taskPath     = "/tasks/"
+	taskTimePath = "/time"
+)
+
 func NewRouter(taskService *service.TaskService) http.Handler {
 	mux := http.NewServeMux()
-
 	taskHandler := handler.NewTaskHandler(taskService)
 
-	mux.HandleFunc("/tasks", taskHandler.Tasks)
-	mux.HandleFunc("/tasks/", taskRoute(taskHandler))
+	mux.HandleFunc(tasksPath, taskHandler.Tasks)
+	mux.HandleFunc(taskPath, routeTaskByID(taskHandler))
 
 	return mux
 }
 
-func taskRoute(taskHandler *handler.TaskHandler) http.HandlerFunc {
+func routeTaskByID(taskHandler *handler.TaskHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if isTaskTimePath(r.URL.Path) {
+		if hasTaskTimeSuffix(r.URL.Path) {
 			taskHandler.AddTime(w, r)
 			return
 		}
@@ -30,6 +35,6 @@ func taskRoute(taskHandler *handler.TaskHandler) http.HandlerFunc {
 	}
 }
 
-func isTaskTimePath(path string) bool {
-	return strings.HasSuffix(path, "/time")
+func hasTaskTimeSuffix(path string) bool {
+	return strings.HasSuffix(path, taskTimePath)
 }
