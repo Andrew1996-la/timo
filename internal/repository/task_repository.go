@@ -29,6 +29,12 @@ const taskFields = `
 	spent_seconds
 `
 
+const selectTasksQuery = `
+	SELECT ` + taskFields + `
+	FROM tasks
+	WHERE deleted_at IS NULL
+`
+
 func (r *TaskRepository) Create(ctx context.Context, title string) (*models.Task, error) {
 	const query = `
 		INSERT INTO tasks (title, created_at)
@@ -54,12 +60,9 @@ func (r *TaskRepository) Create(ctx context.Context, title string) (*models.Task
 }
 
 func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
-	query := fmt.Sprintf(`
-		SELECT %s
-		FROM tasks
-		WHERE deleted_at IS NULL
+	const query = selectTasksQuery + `
 		ORDER BY created_at DESC
-	`, taskFields)
+	`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -86,11 +89,9 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 }
 
 func (r *TaskRepository) GetByID(ctx context.Context, id int) (*models.Task, error) {
-	query := fmt.Sprintf(`
-		SELECT %s
-		FROM tasks
-		WHERE id = ? AND deleted_at IS NULL
-	`, taskFields)
+	const query = selectTasksQuery + `
+		AND id = ?
+	`
 
 	task, err := scanTask(r.db.QueryRowContext(ctx, query, id))
 	if err != nil {
