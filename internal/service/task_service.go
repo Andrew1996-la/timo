@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Andrew1996-la/timo/internal/models"
-	"github.com/Andrew1996-la/timo/internal/repository"
 )
 
 var (
@@ -15,11 +14,19 @@ var (
 	ErrInvalidDuration = errors.New("seconds must be positive")
 )
 
-type TaskService struct {
-	repo *repository.TaskRepository
+type taskRepository interface {
+	Create(ctx context.Context, title string) (*models.Task, error)
+	Delete(ctx context.Context, id int) error
+	GetAll(ctx context.Context) ([]models.Task, error)
+	GetByID(ctx context.Context, id int) (*models.Task, error)
+	AddTime(ctx context.Context, id int, seconds int) error
 }
 
-func NewTaskService(repo *repository.TaskRepository) *TaskService {
+type TaskService struct {
+	repo taskRepository
+}
+
+func NewTaskService(repo taskRepository) *TaskService {
 	return &TaskService{
 		repo: repo,
 	}
