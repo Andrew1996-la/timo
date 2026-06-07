@@ -77,8 +77,10 @@ func applyMigration(db *sql.DB, migration Migration) error {
 		)
 	}
 
-	defer tx.Rollback()
-
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	
 	if _, err := tx.Exec(migration.Query); err != nil {
 		return fmt.Errorf(
 			"execute migration %s: %w",
