@@ -97,3 +97,69 @@ func TestTaskService_Create_Success(t *testing.T) {
 
 	repo.AssertExpectations(t)
 }
+
+func TestTaskService_Delete_InvalidID(t *testing.T) {
+	repo := new(mockTaskRepository)
+	taskService := NewTaskService(repo)
+
+	err := taskService.Delete(context.Background(), 0)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidTaskID))
+
+	repo.AssertNotCalled(t, "Delete")
+}
+
+func TestTaskService_Delete_Success(t *testing.T) {
+	ctx := context.Background()
+
+	repo := new(mockTaskRepository)
+	taskService := NewTaskService(repo)
+
+	repo.On("Delete", ctx, 123).Return(nil).Once()
+
+	err := taskService.Delete(ctx, 123)
+
+	require.NoError(t, err)
+
+	repo.AssertExpectations(t)
+}
+
+func TestTaskService_AddTime_InvalidID(t *testing.T) {
+	repo := new(mockTaskRepository)
+	taskService := NewTaskService(repo)
+
+	err := taskService.AddTime(context.Background(), 0, 100)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidTaskID))
+
+	repo.AssertNotCalled(t, "AddTime")
+}
+
+func TestTaskService_AddTime_InvalidSeconds(t *testing.T) {
+	repo := new(mockTaskRepository)
+	taskService := NewTaskService(repo)
+
+	err := taskService.AddTime(context.Background(), 1, -100)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidDuration))
+
+	repo.AssertNotCalled(t, "AddTime")
+}
+
+func TestTaskService_AddTime_Success(t *testing.T) {
+	ctx := context.Background()
+
+	repo := new(mockTaskRepository)
+	taskService := NewTaskService(repo)
+
+	repo.On("AddTime", ctx, 1, 300).Return(nil).Once()
+
+	err := taskService.AddTime(ctx, 1, 300)
+
+	require.NoError(t, err)
+
+	repo.AssertExpectations(t)
+}
