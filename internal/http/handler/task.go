@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/Andrew1996-la/timo/internal/models"
 	"github.com/Andrew1996-la/timo/internal/repository"
 	"github.com/Andrew1996-la/timo/internal/service"
 )
@@ -16,8 +18,16 @@ const (
 	timePathSuffix  = "/time"
 )
 
+type taskService interface {
+	GetAll(ctx context.Context) ([]models.Task, error)
+	Create(ctx context.Context, title string) (*models.Task, error)
+	GetByID(ctx context.Context, id int) (*models.Task, error)
+	Delete(ctx context.Context, id int) error
+	AddTime(ctx context.Context, id int, seconds int) error
+}
+
 type TaskHandler struct {
-	service *service.TaskService
+	service taskService
 }
 
 func NewTaskHandler(service *service.TaskService) *TaskHandler {
