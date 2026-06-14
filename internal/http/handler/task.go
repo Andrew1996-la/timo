@@ -30,7 +30,7 @@ type TaskHandler struct {
 	service taskService
 }
 
-func NewTaskHandler(service *service.TaskService) *TaskHandler {
+func NewTaskHandler(service taskService) *TaskHandler {
 	return &TaskHandler{
 		service: service,
 	}
