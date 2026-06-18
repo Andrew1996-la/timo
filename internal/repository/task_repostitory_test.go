@@ -7,387 +7,408 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Andrew1996-la/timo/internal/models"
 	"github.com/Andrew1996-la/timo/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	_ "modernc.org/sqlite"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
-	t.Helper()
+type TaskRepositorySuite struct {
+	suite.Suite
+	db   *sql.DB
+	repo *TaskRepository
+	ctx  context.Context
+}
+
+func (s *TaskRepositorySuite) SetupTest() {
+	s.ctx = context.Background()
 
 	db, err := sql.Open("sqlite", ":memory:")
-	require.NoError(t, err)
+	s.Require().NoError(err)
 
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
+	err = storage.Migrate(db)
+	s.Require().NoError(err)
+
+	s.db = db
+	s.repo = NewTaskRepository(db)
+}
+
+func (s *TaskRepositorySuite) TearDownTest() {
+	if s.db != nil {
+		s.Require().NoError(s.db.Close())
+	}
+}
+
+func (s *TaskRepositorySuite) createTask(title string) *models.Task {
+	task, err := s.repo.Create(s.ctx, title)
+	s.Require().NoError(err)
+	return task
+}
+
+func (s *TaskRepositorySuite) TestCreate() {
+	s.Run("success", func() {
+		task, err := s.repo.Create(s.ctx, "Test task")
+
+		s.Require().NoError(err)
+		s.Require().NotNil(task)
+		s.NotZero(task.Id)
+		s.Equal("Test task", task.Title)
+		s.Zero(task.SpentSeconds)
+		s.Nil(task.DeletedAt)
+		s.False(task.CreatedAt.IsZero())
 	})
 
-	require.NoError(t, storage.Migrate(db))
+	s.Run("with empty title", func() {
+		task, err := s.repo.Create(s.ctx, "")
 
-	return db
+		s.Require().NoError(err)
+		s.NotZero(task.Id)
+		s.Empty(task.Title)
+	})
+
+	s.Run("with very long title", func() {
+		longTitle := string(make([]byte, 1000))
+		task, err := s.repo.Create(s.ctx, longTitle)
+
+		s.Require().NoError(err)
+		s.Equal(longTitle, task.Title)
+	})
 }
 
-func TestTaskRepository_Create_Success(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestGetByID() {
+	s.Run("existing task", func() {
+		created := s.createTask("Test task")
 
-	repo := NewTaskRepository(db)
+		task, err := s.repo.GetByID(s.ctx, created.Id)
 
-	task, err := repo.Create(ctx, "Learn repository tests")
+		s.Require().NoError(err)
+		s.Require().NotNil(task)
+		s.Equal(created.Id, task.Id)
+		s.Equal(created.Title, task.Title)
+		s.Equal(created.SpentSeconds, task.SpentSeconds)
+		s.Equal(created.CreatedAt.Unix(), task.CreatedAt.Unix())
+		s.Equal(created.DeletedAt, task.DeletedAt)
+	})
 
-	require.NoError(t, err)
-	require.NotNil(t, task)
+	s.Run("non-existent task", func() {
+		task, err := s.repo.GetByID(s.ctx, 999)
 
-	assert.NotZero(t, task.Id)
-	assert.Equal(t, "Learn repository tests", task.Title)
-	assert.Equal(t, 0, task.SpentSeconds)
-	assert.Nil(t, task.DeletedAt)
-	assert.False(t, task.CreatedAt.IsZero())
+		s.Require().Error(err)
+		s.Nil(task)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
+
+	s.Run("deleted task", func() {
+		created := s.createTask("To be deleted")
+		s.Require().NoError(s.repo.Delete(s.ctx, created.Id))
+
+		task, err := s.repo.GetByID(s.ctx, created.Id)
+
+		s.Require().Error(err)
+		s.Nil(task)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
 }
 
-func TestTaskRepository_GetByID_Success(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestGetAll() {
+	s.Run("empty database", func() {
+		tasks, err := s.repo.GetAll(s.ctx)
 
-	repo := NewTaskRepository(db)
+		s.Require().NoError(err)
+		s.Empty(tasks)
+	})
 
-	created, err := repo.Create(ctx, "Test task")
-	require.NoError(t, err)
+	s.Run("returns all tasks ordered by creation date", func() {
+		task1 := s.createTask("First")
+		time.Sleep(10 * time.Millisecond)
+		task2 := s.createTask("Second")
+		time.Sleep(10 * time.Millisecond)
+		task3 := s.createTask("Third")
 
-	task, err := repo.GetByID(ctx, created.Id)
+		tasks, err := s.repo.GetAll(s.ctx)
 
-	require.NoError(t, err)
-	require.NotNil(t, task)
+		s.Require().NoError(err)
+		s.Len(tasks, 3)
 
-	assert.Equal(t, created.Id, task.Id)
-	assert.Equal(t, created.Title, task.Title)
-	assert.Equal(t, created.SpentSeconds, task.SpentSeconds)
-	assert.Equal(t, created.CreatedAt.Unix(), task.CreatedAt.Unix())
-	assert.Equal(t, created.DeletedAt, task.DeletedAt)
+		s.Equal(task3.Id, tasks[0].Id)
+		s.Equal(task2.Id, tasks[1].Id)
+		s.Equal(task1.Id, tasks[2].Id)
+
+		for _, task := range tasks {
+			s.NotZero(task.Id)
+			s.NotEmpty(task.Title)
+			s.False(task.CreatedAt.IsZero())
+			s.Nil(task.DeletedAt)
+			s.Zero(task.SpentSeconds)
+		}
+	})
+
+	s.Run("excludes deleted tasks", func() {
+		task1 := s.createTask("Keep")
+		task2 := s.createTask("Delete")
+		s.Require().NoError(s.repo.Delete(s.ctx, task2.Id))
+
+		tasks, err := s.repo.GetAll(s.ctx)
+
+		s.Require().NoError(err)
+		s.Len(tasks, 1)
+		s.Equal(task1.Id, tasks[0].Id)
+	})
+
+	s.Run("handles many tasks", func() {
+		expectedCount := 100
+		for i := 0; i < expectedCount; i++ {
+			s.createTask("Task " + string(rune(i)))
+		}
+
+		tasks, err := s.repo.GetAll(s.ctx)
+
+		s.Require().NoError(err)
+		s.Len(tasks, expectedCount)
+	})
 }
 
-func TestTaskRepository_GetByID_NotFound(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestDelete() {
+	s.Run("successful deletion", func() {
+		task := s.createTask("To delete")
 
-	repo := NewTaskRepository(db)
+		err := s.repo.Delete(s.ctx, task.Id)
 
-	task, err := repo.GetByID(ctx, 999)
+		s.Require().NoError(err)
 
-	require.Error(t, err)
-	assert.Nil(t, task)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
+		_, err = s.repo.GetByID(s.ctx, task.Id)
+		s.True(errors.Is(err, ErrTaskNotFound))
+
+		tasks, err := s.repo.GetAll(s.ctx)
+		s.Require().NoError(err)
+		s.Empty(tasks)
+	})
+
+	s.Run("non-existent task", func() {
+		err := s.repo.Delete(s.ctx, 999)
+
+		s.Require().Error(err)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
+
+	s.Run("already deleted task", func() {
+		task := s.createTask("Delete twice")
+		s.Require().NoError(s.repo.Delete(s.ctx, task.Id))
+
+		err := s.repo.Delete(s.ctx, task.Id)
+
+		s.Require().Error(err)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
+
+	s.Run("delete with negative id", func() {
+		err := s.repo.Delete(s.ctx, -1)
+
+		s.Require().Error(err)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
 }
 
-func TestTaskRepository_GetAll_Empty(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestAddTime() {
+	s.Run("successful time addition", func() {
+		task := s.createTask("Time task")
 
-	repo := NewTaskRepository(db)
+		err := s.repo.AddTime(s.ctx, task.Id, 60)
+		s.Require().NoError(err)
 
-	tasks, err := repo.GetAll(ctx)
+		task, err = s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Equal(60, task.SpentSeconds)
 
-	require.NoError(t, err)
-	assert.Empty(t, tasks)
+		err = s.repo.AddTime(s.ctx, task.Id, 30)
+		s.Require().NoError(err)
+
+		task, err = s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Equal(90, task.SpentSeconds)
+	})
+
+	s.Run("non-existent task", func() {
+		err := s.repo.AddTime(s.ctx, 999, 60)
+
+		s.Require().Error(err)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
+
+	s.Run("deleted task", func() {
+		task := s.createTask("Delete before time")
+		s.Require().NoError(s.repo.Delete(s.ctx, task.Id))
+
+		err := s.repo.AddTime(s.ctx, task.Id, 60)
+
+		s.Require().Error(err)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
+
+	s.Run("negative time", func() {
+		task := s.createTask("Negative time")
+
+		err := s.repo.AddTime(s.ctx, task.Id, -10)
+		s.Require().NoError(err)
+
+		task, err = s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Equal(-10, task.SpentSeconds)
+	})
+
+	s.Run("zero time", func() {
+		task := s.createTask("Zero time")
+
+		err := s.repo.AddTime(s.ctx, task.Id, 0)
+		s.Require().NoError(err)
+
+		task, err = s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Zero(task.SpentSeconds)
+	})
+
+	s.Run("large time", func() {
+		task := s.createTask("Large time")
+
+		err := s.repo.AddTime(s.ctx, task.Id, 1000000)
+		s.Require().NoError(err)
+
+		task, err = s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Equal(1000000, task.SpentSeconds)
+	})
 }
 
-func TestTaskRepository_GetAll_Success(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestIntegration() {
+	s.Run("complete workflow", func() {
+		task1 := s.createTask("Task 1")
+		task2 := s.createTask("Task 2")
 
-	repo := NewTaskRepository(db)
+		s.Require().NoError(s.repo.AddTime(s.ctx, task1.Id, 120))
 
-	task1, err := repo.Create(ctx, "First task")
-	require.NoError(t, err)
+		task1, err := s.repo.GetByID(s.ctx, task1.Id)
+		s.Require().NoError(err)
+		s.Equal(120, task1.SpentSeconds)
 
-	task2, err := repo.Create(ctx, "Second task")
-	require.NoError(t, err)
+		s.Require().NoError(s.repo.Delete(s.ctx, task2.Id))
 
-	task3, err := repo.Create(ctx, "Third task")
-	require.NoError(t, err)
+		tasks, err := s.repo.GetAll(s.ctx)
+		s.Require().NoError(err)
+		s.Len(tasks, 1)
+		s.Equal(task1.Id, tasks[0].Id)
 
-	tasks, err := repo.GetAll(ctx)
+		s.Require().NoError(s.repo.AddTime(s.ctx, task1.Id, 30))
 
-	require.NoError(t, err)
-	assert.Len(t, tasks, 3)
+		task1, err = s.repo.GetByID(s.ctx, task1.Id)
+		s.Require().NoError(err)
+		s.Equal(150, task1.SpentSeconds)
 
-	assert.Equal(t, task3.Id, tasks[0].Id)
-	assert.Equal(t, task3.Title, tasks[0].Title)
+		s.Require().NoError(s.repo.Delete(s.ctx, task1.Id))
 
-	assert.Equal(t, task2.Id, tasks[1].Id)
-	assert.Equal(t, task2.Title, tasks[1].Title)
+		tasks, err = s.repo.GetAll(s.ctx)
+		s.Require().NoError(err)
+		s.Empty(tasks)
+	})
 
-	assert.Equal(t, task1.Id, tasks[2].Id)
-	assert.Equal(t, task1.Title, tasks[2].Title)
+	s.Run("concurrent operations", func() {
+		task := s.createTask("Concurrent")
+		done := make(chan bool, 10)
 
-	for _, task := range tasks {
-		assert.NotZero(t, task.Id)
-		assert.NotEmpty(t, task.Title)
-		assert.False(t, task.CreatedAt.IsZero())
-		assert.Nil(t, task.DeletedAt)
-		assert.Equal(t, 0, task.SpentSeconds)
-	}
+		for i := 0; i < 10; i++ {
+			go func() {
+				err := s.repo.AddTime(s.ctx, task.Id, 10)
+				s.Assert().NoError(err)
+				done <- true
+			}()
+		}
+
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+
+		task, err := s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Equal(100, task.SpentSeconds)
+	})
 }
 
-func TestTaskRepository_Delete_Success(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestTimestamps() {
+	s.Run("created_at is set correctly", func() {
+		before := time.Now()
+		task := s.createTask("Timestamp test")
+		after := time.Now()
 
-	repo := NewTaskRepository(db)
+		s.True(task.CreatedAt.After(before) || task.CreatedAt.Equal(before))
+		s.True(task.CreatedAt.Before(after) || task.CreatedAt.Equal(after))
+	})
 
-	task, err := repo.Create(ctx, "Task to delete")
-	require.NoError(t, err)
+	s.Run("created_at doesn't change on update", func() {
+		task := s.createTask("No change")
+		originalCreated := task.CreatedAt
 
-	err = repo.Delete(ctx, task.Id)
-	require.NoError(t, err)
+		s.Require().NoError(s.repo.AddTime(s.ctx, task.Id, 30))
 
-	deletedTask, err := repo.GetByID(ctx, task.Id)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
-	assert.Nil(t, deletedTask)
+		task, err := s.repo.GetByID(s.ctx, task.Id)
+		s.Require().NoError(err)
+		s.Equal(originalCreated.Unix(), task.CreatedAt.Unix())
+	})
 
-	tasks, err := repo.GetAll(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, tasks)
+	s.Run("deleted_at is set on deletion", func() {
+		task := s.createTask("Delete me")
+
+		s.Require().NoError(s.repo.Delete(s.ctx, task.Id))
+
+		_, err := s.repo.GetByID(s.ctx, task.Id)
+		s.True(errors.Is(err, ErrTaskNotFound))
+	})
 }
 
-func TestTaskRepository_Delete_NotFound(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
+func (s *TaskRepositorySuite) TestEdgeCases() {
+	s.Run("duplicate titles", func() {
+		s.createTask("Same title")
+		s.createTask("Same title")
+		s.createTask("Same title")
 
-	repo := NewTaskRepository(db)
+		tasks, err := s.repo.GetAll(s.ctx)
+		s.Require().NoError(err)
+		s.Len(tasks, 3)
 
-	err := repo.Delete(ctx, 999)
+		for _, task := range tasks {
+			s.Equal("Same title", task.Title)
+		}
+	})
 
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
+	s.Run("create after deletion", func() {
+		task := s.createTask("First")
+		s.Require().NoError(s.repo.Delete(s.ctx, task.Id))
+
+		newTask := s.createTask("Second")
+		s.NotEqual(task.Id, newTask.Id)
+
+		tasks, err := s.repo.GetAll(s.ctx)
+		s.Require().NoError(err)
+		s.Len(tasks, 1)
+		s.Equal(newTask.Id, tasks[0].Id)
+	})
+
+	s.Run("add time to multiple tasks", func() {
+		task1 := s.createTask("Task 1")
+		task2 := s.createTask("Task 2")
+
+		s.Require().NoError(s.repo.AddTime(s.ctx, task1.Id, 10))
+		s.Require().NoError(s.repo.AddTime(s.ctx, task2.Id, 20))
+
+		task1, err := s.repo.GetByID(s.ctx, task1.Id)
+		s.Require().NoError(err)
+		s.Equal(10, task1.SpentSeconds)
+
+		task2, err = s.repo.GetByID(s.ctx, task2.Id)
+		s.Require().NoError(err)
+		s.Equal(20, task2.SpentSeconds)
+	})
 }
 
-func TestTaskRepository_Delete_AlreadyDeleted(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task, err := repo.Create(ctx, "Task to delete twice")
-	require.NoError(t, err)
-
-	err = repo.Delete(ctx, task.Id)
-	require.NoError(t, err)
-
-	err = repo.Delete(ctx, task.Id)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
-}
-
-func TestTaskRepository_AddTime_Success(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task, err := repo.Create(ctx, "Task with time")
-	require.NoError(t, err)
-
-	err = repo.AddTime(ctx, task.Id, 60)
-	require.NoError(t, err)
-
-	task, err = repo.GetByID(ctx, task.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 60, task.SpentSeconds)
-
-	err = repo.AddTime(ctx, task.Id, 30)
-	require.NoError(t, err)
-
-	task, err = repo.GetByID(ctx, task.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 90, task.SpentSeconds)
-}
-
-func TestTaskRepository_AddTime_NotFound(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	err := repo.AddTime(ctx, 999, 60)
-
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
-}
-
-func TestTaskRepository_AddTime_ToDeletedTask(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task, err := repo.Create(ctx, "Task to delete")
-	require.NoError(t, err)
-
-	err = repo.Delete(ctx, task.Id)
-	require.NoError(t, err)
-
-	err = repo.AddTime(ctx, task.Id, 60)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
-}
-
-func TestTaskRepository_AddTime_Negative(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task, err := repo.Create(ctx, "Task with negative time")
-	require.NoError(t, err)
-
-	err = repo.AddTime(ctx, task.Id, -10)
-	require.NoError(t, err)
-
-	task, err = repo.GetByID(ctx, task.Id)
-	require.NoError(t, err)
-	assert.Equal(t, -10, task.SpentSeconds)
-}
-
-func TestTaskRepository_Integration_Workflow(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task1, err := repo.Create(ctx, "Task 1")
-	require.NoError(t, err)
-
-	task2, err := repo.Create(ctx, "Task 2")
-	require.NoError(t, err)
-
-	err = repo.AddTime(ctx, task1.Id, 120)
-	require.NoError(t, err)
-
-	task1, err = repo.GetByID(ctx, task1.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 120, task1.SpentSeconds)
-
-	err = repo.Delete(ctx, task2.Id)
-	require.NoError(t, err)
-
-	tasks, err := repo.GetAll(ctx)
-	require.NoError(t, err)
-	assert.Len(t, tasks, 1)
-	assert.Equal(t, task1.Id, tasks[0].Id)
-
-	_, err = repo.GetByID(ctx, task2.Id)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
-
-	err = repo.AddTime(ctx, task1.Id, 30)
-	require.NoError(t, err)
-
-	task1, err = repo.GetByID(ctx, task1.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 150, task1.SpentSeconds)
-
-	err = repo.Delete(ctx, task1.Id)
-	require.NoError(t, err)
-
-	tasks, err = repo.GetAll(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, tasks)
-}
-
-func TestTaskRepository_Concurrent_Create(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	done := make(chan bool)
-	for i := 0; i < 10; i++ {
-		go func() {
-			task, err := repo.Create(ctx, "Concurrent task")
-			assert.NoError(t, err)
-			assert.NotZero(t, task.Id)
-			done <- true
-		}()
-	}
-
-	for i := 0; i < 10; i++ {
-		<-done
-	}
-
-	tasks, err := repo.GetAll(ctx)
-	require.NoError(t, err)
-	assert.Len(t, tasks, 10)
-}
-
-func TestTaskRepository_Concurrent_AddTime(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task, err := repo.Create(ctx, "Concurrent time task")
-	require.NoError(t, err)
-
-	done := make(chan bool)
-	for i := 0; i < 5; i++ {
-		go func() {
-			err := repo.AddTime(ctx, task.Id, 10)
-			assert.NoError(t, err)
-			done <- true
-		}()
-	}
-
-	for i := 0; i < 5; i++ {
-		<-done
-	}
-
-	task, err = repo.GetByID(ctx, task.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 50, task.SpentSeconds)
-}
-
-func TestTaskRepository_DeletedAt_Formatting(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	task, err := repo.Create(ctx, "Task with deletion time")
-	require.NoError(t, err)
-
-	err = repo.Delete(ctx, task.Id)
-	require.NoError(t, err)
-
-	_, err = repo.GetByID(ctx, task.Id)
-	assert.True(t, errors.Is(err, ErrTaskNotFound))
-
-	tasks, err := repo.GetAll(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, tasks)
-}
-
-func TestTaskRepository_Timestamp_Consistency(t *testing.T) {
-	ctx := context.Background()
-	db := setupTestDB(t)
-
-	repo := NewTaskRepository(db)
-
-	beforeCreate := time.Now()
-	task, err := repo.Create(ctx, "Timestamp test")
-	afterCreate := time.Now()
-	require.NoError(t, err)
-
-	assert.True(t, task.CreatedAt.After(beforeCreate) || task.CreatedAt.Equal(beforeCreate))
-	assert.True(t, task.CreatedAt.Before(afterCreate) || task.CreatedAt.Equal(afterCreate))
-
-	beforeAddTime := task.CreatedAt
-	err = repo.AddTime(ctx, task.Id, 30)
-	require.NoError(t, err)
-
-	task, err = repo.GetByID(ctx, task.Id)
-	require.NoError(t, err)
-	assert.Equal(t, beforeAddTime.Unix(), task.CreatedAt.Unix())
+func TestTaskRepositorySuite(t *testing.T) {
+	suite.Run(t, new(TaskRepositorySuite))
 }
