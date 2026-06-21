@@ -7,6 +7,7 @@ import (
 
 	"github.com/Andrew1996-la/timo/internal/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRenderTaskList_ShowsTasks(t *testing.T) {
@@ -45,10 +46,10 @@ func TestRenderTaskList_ShowsSelectedTask(t *testing.T) {
 
 	result := RenderTaskList(view)
 
-	lines := strings.Split(result, "\n")
+	selectedLine := findLineContaining(t, result, "Second task")
 
-	assert.Contains(t, lines[3], ">")
-	assert.Contains(t, lines[3], "Second task")
+	assert.Contains(t, selectedLine, ">")
+	assert.Contains(t, selectedLine, "Second task")
 }
 
 func TestRenderTaskList_ShowsRunningTimer(t *testing.T) {
@@ -70,9 +71,46 @@ func TestRenderTaskList_ShowsRunningTimer(t *testing.T) {
 
 	result := RenderTaskList(view)
 
-	assert.Contains(t, result, "Running task")
-	assert.Contains(t, result, "▶")
-	assert.Contains(t, result, "⚙️")
+	line := findLineContaining(t, result, "Running task")
+
+	assert.Contains(t, line, "Running task")
+	assert.Contains(t, line, "▶")
+	assert.Contains(t, line, "⚙️")
+	assert.Contains(t, result, "00:01:")
+}
+
+func TestRenderTaskList_DoesNotShowRunningIconForOtherTask(t *testing.T) {
+	started := time.Now().Add(-10 * time.Second)
+
+	view := TaskView{
+		Tasks: []models.Task{
+			{
+				Id:           1,
+				Title:        "First task",
+				SpentSeconds: 60,
+			},
+			{
+				Id:           2,
+				Title:        "Second task",
+				SpentSeconds: 30,
+			},
+		},
+		Selected:     0,
+		TimerRunning: true,
+		TimerTaskID:  1,
+		TimerStarted: started,
+	}
+
+	result := RenderTaskList(view)
+
+	firstLine := findLineContaining(t, result, "First task")
+	secondLine := findLineContaining(t, result, "Second task")
+
+	assert.Contains(t, firstLine, "▶")
+	assert.Contains(t, firstLine, "⚙️")
+
+	assert.Contains(t, secondLine, "⏸")
+	assert.NotContains(t, secondLine, "⚙️")
 }
 
 func TestFormatSeconds(t *testing.T) {
@@ -108,4 +146,18 @@ func TestFormatSeconds(t *testing.T) {
 			assert.Equal(t, tt.expected, formatSeconds(tt.seconds))
 		})
 	}
+}
+
+func findLineContaining(t *testing.T, text string, value string) string {
+	t.Helper()
+
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, value) {
+			return line
+		}
+	}
+
+	require.Failf(t, "line not found", "expected line containing %q", value)
+
+	return ""
 }
